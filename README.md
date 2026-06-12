@@ -13,8 +13,13 @@ reproduce desde ahí (WHEP) como un elemento más de tus escenas. Latencia típi
 
 1. **Coolify → + New → Public Repository**, pega la URL de este repo y elige
    *Docker Compose* como build pack (el `docker-compose.yml` está en la raíz).
-2. En *Environment Variables*, define `PUBLIC_HOST=invitados.tudominio.com`
-   (solo el host, sin `https://`).
+2. En *Environment Variables*, define dos cosas en una: `PUBLIC_HOST` =
+   **la IP pública del VPS** (recomendado) o el dominio SOLO si está en
+   "DNS only" — un dominio proxied por Cloudflare rompe el video (anuncia el
+   edge de Cloudflare en los candidatos ICE y Cloudflare no pasa UDP).
+   También es el host del label de Traefik, así que si usas la IP en
+   PUBLIC_HOST, configura el dominio del servicio web en la pestaña Domains
+   de Coolify (variable mágica SERVICE_FQDN_WEB ya declarada).
 3. DNS: registro **A** de ese subdominio → la IP del VPS (si usas Cloudflare,
    en "DNS only" para que Let's Encrypt emita el certificado).
 4. **Abre el puerto `8189/udp`** en el firewall del VPS (Hetzner/Oracle/etc.).

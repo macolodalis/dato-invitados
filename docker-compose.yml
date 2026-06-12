@@ -25,7 +25,10 @@ services:
       dockerfile: Dockerfile.mediamtx
     restart: unless-stopped
     environment:
-      # dominio público que MediaMTX anuncia en los candidatos ICE
+      # Qué anuncia MediaMTX en los candidatos ICE (por ahí viaja el VIDEO).
+      # ⚠️ Usa la IP PÚBLICA del VPS. Si pones un dominio proxied por
+      # Cloudflare (nube naranja), resuelve al edge de Cloudflare y el video
+      # nunca conecta — Cloudflare no pasa UDP/WebRTC.
       MTX_WEBRTCADDITIONALHOSTS: ${PUBLIC_HOST:-invitados.example.com}
     ports:
       - "8189:8189/udp"   # ICE/medios WebRTC — DEBE estar abierto en el firewall
