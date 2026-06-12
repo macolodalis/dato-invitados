@@ -2,35 +2,33 @@
 # estable latencia, funciona con cualquier red del invitado).
 #
 # Despliegue en Coolify:
-#   1. Crea un recurso "Docker Compose" y pega este archivo.
-#   2. Asigna un dominio HTTPS al servicio `web` (p. ej. invitados.tudominio.com).
-#      Coolify/Traefik se encarga del certificado — getDisplayMedia exige HTTPS.
-#   3. IMPORTANTE: abre el puerto UDP 8189 en el firewall del VPS
-#      (es el puerto único de WebRTC; sin él no fluye el video).
-#   4. En la app: Ajustes → Invitados → pega https://invitados.tudominio.com
+#   1. + New → Public Repository → URL de este repo → build pack "Docker Compose".
+#   2. Variable de entorno PUBLIC_HOST = invitados.tudominio.com
+#   3. Asigna ese dominio HTTPS al servicio `web` (puerto 80). Sin HTTPS el
+#      navegador del invitado no permite compartir pantalla.
+#   4. Abre el puerto UDP 8189 en el firewall del VPS (por ahí fluye el video).
 #
-# El servicio `web` (nginx) sirve la página del invitado y hace proxy del
-# WHIP/WHEP hacia mediamtx, así todo viaja por el MISMO dominio HTTPS.
+# Los archivos de configuración van DENTRO de las imágenes (Dockerfiles):
+# Coolify no monta archivos del repo en despliegues compose.
 services:
   mediamtx:
-    image: bluenviron/mediamtx:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.mediamtx
     restart: unless-stopped
     environment:
-      # WebRTC por un único puerto UDP (más simple de abrir que un rango)
+      # dominio público que MediaMTX anuncia en los candidatos ICE
       MTX_WEBRTCADDITIONALHOSTS: ${PUBLIC_HOST:-invitados.example.com}
-    volumes:
-      - ./mediamtx.yml:/mediamtx.yml:ro
     ports:
       - "8189:8189/udp"   # ICE/medios WebRTC — DEBE estar abierto en el firewall
     expose:
       - "8889"            # WHIP/WHEP HTTP (solo interno; nginx hace proxy)
 
   web:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.web
     restart: unless-stopped
     depends_on: [mediamtx]
-    volumes:
-      - ./guest.html:/usr/share/nginx/html/index.html:ro
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     expose:
       - "80"              # Coolify/Traefik publica esto con HTTPS

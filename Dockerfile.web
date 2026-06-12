@@ -1,0 +1,4 @@
+# Página del invitado + proxy WHIP/WHEP, todo horneado en la imagen.
+FROM nginx:alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY guest.html /usr/share/nginx/html/index.html
