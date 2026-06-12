@@ -120,6 +120,12 @@ const room = (qs.get('room') || '').replace(/[^a-z0-9-]/g, '');
 const SRV = (qs.get('server') || '').replace(/\/$/, '');
 const who = qs.get('n') || '';
 if (who) document.getElementById('who').textContent = 'Invitado: ' + who;
+if (qs.get('chat') === '0') {
+  // modo "Mi cámara" del host: sin panel de chat (lo ve en la app)
+  document.querySelector('.chat').style.display = 'none';
+  document.querySelector('.cols').style.gridTemplateColumns = '1fr';
+  document.querySelector('.brand span').textContent = 'Mi cámara · estudio';
+}
 const $ = (id) => document.getElementById(id);
 // Dos sesiones independientes: la cámara publica en inv-<token> y la
 // pantalla en inv-<token>s — en el estudio son dos elementos separados.
@@ -329,7 +335,7 @@ function wsURL(){
   return base.replace(/^http/, 'ws') + '/ws/' + room + '?role=sub';
 }
 function connectChat(){
-  if (!room) return;
+  if (!room || qs.get('chat') === '0') return;
   try { ws = new WebSocket(wsURL()); } catch (e) { return setTimeout(connectChat, 5000); }
   ws.onopen = () => { $('cdot').classList.add('on'); };
   ws.onclose = () => { $('cdot').classList.remove('on'); setTimeout(connectChat, 4000); };
