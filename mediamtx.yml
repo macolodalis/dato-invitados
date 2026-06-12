@@ -6,6 +6,7 @@ rtsp: no
 rtmp: no
 hls: no
 srt: no
+moq: no
 
 api: no
 metrics: no

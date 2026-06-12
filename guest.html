@@ -95,6 +95,7 @@
       <button id="bCam">🎥 Cámara + mic</button>
       <button id="bScreen">🖥️ Compartir pantalla</button>
       <button id="bMute" style="display:none">🔇 Silenciar</button>
+      <button id="bRet" style="display:none">🔊 Escuchar al estudio</button>
       <button id="bQual">✨ Nitidez: equilibrada</button>
       <button id="bStop" class="stop" style="display:none">Detener</button>
     </div>
@@ -159,6 +160,7 @@ function stopKind(kind){
   const sess = sessions[kind];
   if (!sess) return;
   sessions[kind] = null;
+  if (kind === 'cam') stopReturnPush();
   try { sess.pc && sess.pc.close(); } catch (e) {}
   if (sess.stream) sess.stream.getTracks().forEach(t => t.stop());
   (sess.raws || []).forEach(t => { try { t.stop(); } catch (e) {} });
@@ -250,6 +252,7 @@ async function start(kind){
   const sess = { pc, stream, raws, mix };
   sessions[slot] = sess;
   tuneSenders(pc, slot);
+  if (slot === 'cam' && stream.getAudioTracks().length) pushReturn(stream.getAudioTracks()[0]);
   // si el invitado corta la pantalla desde la barra del navegador
   stream.getVideoTracks()[0].addEventListener('ended', () => { if (sessions[slot] === sess) stopKind(slot); });
   stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -321,10 +324,79 @@ $('bMute').onclick = () => {
   $('bMute').textContent = muted ? '🎙️ Activar audio' : '🔇 Silenciar';
   $('bMute').classList.toggle('on', muted);
 };
-const TESTMODE = qs.get('test');
-if (TESTMODE === '1' || TESTMODE === '2') start('test');
-// test=3: cámara y pantalla sintéticas a la vez (valida el modo dual completo)
-if (TESTMODE === '3') { start('test'); setTimeout(() => start('testscreen'), 800); }
+
+
+// ===== retorno de audio =====
+// INVITADO (?ret=sala): reproduce la voz del estudio vía WHEP.
+// HOST (?retpush=sala&retsrv=url): publica su mic al VPS para los invitados.
+const RET = (qs.get('ret') || '').replace(/[^a-z0-9-]/g, '');
+const RETPUSH = (qs.get('retpush') || '').replace(/[^a-z0-9-]/g, '');
+const RETSRV = (qs.get('retsrv') || '').replace(/\/$/, '');
+let retAudio = null, retPC = null, retMuted = true;
+
+async function connectReturn(){
+  if (!RET) return;
+  if (retPC) { try { retPC.close(); } catch (e) {} }
+  retPC = new RTCPeerConnection();
+  retPC.addTransceiver('audio', { direction: 'recvonly' });
+  retPC.getReceivers().forEach((r) => { try { r.jitterBufferTarget = 60; } catch (e) {} });
+  if (!retAudio) { retAudio = new Audio(); retAudio.autoplay = true; }
+  retAudio.muted = retMuted;
+  retPC.ontrack = (ev) => { if (ev.streams[0]) retAudio.srcObject = ev.streams[0]; };
+  retPC.onconnectionstatechange = () => {
+    if (['failed','disconnected','closed'].includes(retPC.connectionState)) setTimeout(connectReturn, 5000);
+  };
+  try {
+    const offer = await retPC.createOffer();
+    await retPC.setLocalDescription(offer);
+    await new Promise((res) => { if (retPC.iceGatheringState === 'complete') return res();
+      retPC.addEventListener('icegatheringstatechange', () => { if (retPC.iceGatheringState === 'complete') res(); });
+      setTimeout(res, 1500); });
+    const r = await fetch(`${SRV}/${RET}/whep`, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: retPC.localDescription.sdp });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await retPC.setRemoteDescription({ type: 'answer', sdp: await r.text() });
+  } catch (e) { setTimeout(connectReturn, 6000); }
+}
+function paintRet(){
+  $('bRet').textContent = retMuted ? '🔊 Escuchar al estudio' : '🔇 Estudio: sonando';
+  $('bRet').classList.toggle('on', !retMuted);
+}
+if (RET) {
+  $('bRet').style.display = '';
+  paintRet();
+  $('bRet').onclick = () => {
+    retMuted = !retMuted;
+    if (retAudio) { retAudio.muted = retMuted; retAudio.play && retAudio.play().catch(() => {}); }
+    paintRet();
+  };
+  connectReturn();
+}
+
+// HOST: publicar el mic al VPS como retorno (audio-only, junto a la cámara)
+let retPushPC = null;
+async function pushReturn(micTrack){
+  if (!RETPUSH || !RETSRV || !micTrack) return;
+  if (retPushPC) { try { retPushPC.close(); } catch (e) {} retPushPC = null; }
+  const pc = new RTCPeerConnection();
+  retPushPC = pc;
+  pc.addTrack(micTrack, new MediaStream([micTrack]));
+  pc.onconnectionstatechange = () => {
+    if (pc === retPushPC && ['failed','disconnected'].includes(pc.connectionState)) {
+      setTimeout(() => { if (sessions.cam) pushReturn(micTrack); }, 5000);
+    }
+  };
+  try {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await new Promise((res) => { if (pc.iceGatheringState === 'complete') return res();
+      pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') res(); });
+      setTimeout(res, 1500); });
+    const r = await fetch(`${RETSRV}/${RETPUSH}/whip`, { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: pc.localDescription.sdp });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await pc.setRemoteDescription({ type: 'answer', sdp: await r.text() });
+  } catch (e) { setTimeout(() => { if (sessions.cam) pushReturn(micTrack); }, 6000); }
+}
+function stopReturnPush(){ if (retPushPC) { try { retPushPC.close(); } catch (e) {} retPushPC = null; } }
 
 // ===== chat del stream (vía el relay del servidor) =====
 let ws = null, msgs = [], tab = 'all';
@@ -397,4 +469,11 @@ if (who) {
   $('tabMine').onclick = () => { tab = 'mine'; $('tabMine').classList.add('on'); $('tabAll').classList.remove('on'); renderChat(); };
 }
 connectChat();
+
+// auto-arranque de los modos de prueba — AL FINAL: para entonces todas las
+// const del script (retorno incluido) ya están inicializadas.
+const TESTMODE = qs.get('test');
+if (TESTMODE === '1' || TESTMODE === '2') start('test');
+// test=3: cámara y pantalla sintéticas a la vez (valida el modo dual completo)
+if (TESTMODE === '3') { start('test'); setTimeout(() => start('testscreen'), 800); }
 </script></body></html>
