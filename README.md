@@ -13,14 +13,16 @@ reproduce desde ahí (WHEP) como un elemento más de tus escenas. Latencia típi
 
 1. **Coolify → + New → Public Repository**, pega la URL de este repo y elige
    *Docker Compose* como build pack (el `docker-compose.yml` está en la raíz).
-2. En *Environment*, define `PUBLIC_HOST=invitados.tudominio.com`
-   (el dominio que le darás al servicio).
-3. Asigna ese **dominio con HTTPS** al servicio `web` (puerto 80). Coolify
-   emite el certificado solo — sin HTTPS el navegador del invitado no permite
-   compartir pantalla.
+2. En *Environment Variables*, define `PUBLIC_HOST=invitados.tudominio.com`
+   (solo el host, sin `https://`).
+3. DNS: registro **A** de ese subdominio → la IP del VPS (si usas Cloudflare,
+   en "DNS only" para que Let's Encrypt emita el certificado).
 4. **Abre el puerto `8189/udp`** en el firewall del VPS (Hetzner/Oracle/etc.).
    Por ahí fluye el video WebRTC; el resto viaja por el 443 normal.
-5. En la app: **Ajustes → Invitados** → pega `https://invitados.tudominio.com`.
+5. Deploy y listo. **No hace falta tocar la pantalla de dominios de Coolify**:
+   el enrutamiento HTTPS, la redirección y el certificado van como labels de
+   Traefik dentro del compose.
+6. En la app: **Ajustes → Invitados** → pega `https://invitados.tudominio.com`.
 
 ## Prueba rápida sin invitado
 
