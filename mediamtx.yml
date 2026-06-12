@@ -1,0 +1,33 @@
+# MediaMTX para "Invitados" — solo WebRTC (WHIP publica el invitado,
+# WHEP lee el overlay). El resto de protocolos queda apagado.
+logLevel: info
+
+rtsp: no
+rtmp: no
+hls: no
+srt: no
+
+api: no
+metrics: no
+playback: no
+
+webrtc: yes
+webrtcAddress: :8889
+# Un único puerto UDP para los medios (abre 8189/udp en el firewall del VPS).
+webrtcLocalUDPAddress: :8189
+# El dominio público se inyecta vía MTX_WEBRTCADDITIONALHOSTS en el compose.
+webrtcIPsFromInterfaces: yes
+# La página del invitado vive en otro origen lógico (nginx) — permitir CORS.
+webrtcAllowOrigin: "*"
+
+paths:
+  # Los nombres de stream son tokens largos generados por la app
+  # (inv-a1b2c3d4e5f6...) — actúan como contraseña de publicación.
+  "~^inv-[a-z0-9]{12,}$":
+    source: publisher
+  all_others:
+    # cualquier otra ruta queda rechazada
+    source: publisher
+    sourceOnDemand: no
+    publishUser: bloqueado
+    publishPass: bloqueado

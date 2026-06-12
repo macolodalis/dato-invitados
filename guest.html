@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dato Migratorio · Invitado</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@500;600;700;800&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#0b1224; --card:#121d33; --card2:#0d1730; --line:rgba(255,255,255,.1);
+    --txt:#e9eef8; --dim:#a4afc6; --gold:#f4c542; --acc:#4b86f0; --green:#19c37d; --red:#e8453c; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; min-height:100vh; color:var(--txt); font-family:'Barlow',system-ui,sans-serif;
+    background:radial-gradient(1100px 520px at 50% -180px, #17244b 0%, var(--bg) 60%);
+    display:flex; flex-direction:column; align-items:center; padding:18px 16px calc(30px + env(safe-area-inset-bottom)); gap:14px; }
+  .top{ display:flex; align-items:center; gap:12px; width:100%; max-width:760px; }
+  .dm{ width:38px; height:38px; border-radius:10px; background:linear-gradient(135deg,#e8453c,#b3322c);
+    display:grid; place-items:center; font-family:'Oswald'; font-weight:700; font-size:15px; color:#fff; }
+  .brand b{ font-family:'Oswald'; font-weight:700; font-size:17px; display:block; line-height:1.1; }
+  .brand b i{ color:var(--gold); font-style:normal; }
+  .brand span{ font-family:'Oswald'; font-size:10.5px; letter-spacing:.3em; color:var(--dim); text-transform:uppercase; }
+  .state{ margin-left:auto; display:flex; align-items:center; gap:8px; padding:7px 14px; border-radius:999px;
+    background:var(--card2); border:1px solid var(--line); font-family:'Oswald'; font-weight:600;
+    font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); }
+  .state .dot{ width:8px; height:8px; border-radius:50%; background:#5a647c; }
+  .state.live{ color:#bdf3da; border-color:rgba(25,195,125,.4); } .state.live .dot{ background:var(--green); box-shadow:0 0 8px var(--green); }
+  .state.err{ color:#ffb3ad; border-color:rgba(232,69,60,.45); } .state.err .dot{ background:var(--red); }
+  video{ width:100%; max-width:760px; aspect-ratio:16/9; background:#000; border-radius:14px;
+    border:1px solid var(--line); object-fit:contain; }
+  .controls{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; width:100%; max-width:760px; }
+  button{ font:700 14px 'Barlow'; color:var(--txt); cursor:pointer; padding:13px 20px; border-radius:12px;
+    background:linear-gradient(180deg,var(--card),var(--card2)); border:1px solid var(--line); flex:1 1 160px;
+    display:flex; align-items:center; justify-content:center; gap:9px; transition:border-color .12s, transform .08s; }
+  button:active{ transform:translateY(1px); }
+  button.on{ border-color:var(--gold); box-shadow:0 0 0 1.5px var(--gold); }
+  button.stop{ border-color:rgba(232,69,60,.5); color:#ffb3ad; }
+  .hintbox{ font-size:13px; color:var(--dim); text-align:center; max-width:560px; line-height:1.5; }
+  .name{ font-family:'Oswald'; font-weight:600; font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--gold); }
+</style></head><body>
+<div class="top">
+  <div class="dm">DM</div>
+  <div class="brand"><b>DATO <i>MIGRATORIO</i></b><span>Cabina del invitado</span></div>
+  <div class="state" id="st"><span class="dot"></span><span id="stTxt">Listo</span></div>
+</div>
+<div class="name" id="who"></div>
+<video id="v" autoplay muted playsinline></video>
+<div class="controls">
+  <button id="bCam">🎥 Cámara + mic</button>
+  <button id="bScreen">🖥️ Compartir pantalla</button>
+  <button id="bMute" style="display:none">🔇 Silenciar mic</button>
+  <button id="bStop" class="stop" style="display:none">Detener</button>
+</div>
+<p class="hintbox" id="hint">Elige qué compartir. Cuando el estado diga <b>EN EL AIRE</b>, el estudio ya te ve y te escucha — deja esta pestaña abierta.</p>
+<script>
+const qs = new URLSearchParams(location.search);
+const room = (qs.get('room') || '').replace(/[^a-z0-9-]/g, '');
+// mismo dominio por defecto; ?server= permite separar la página del MediaMTX
+const SRV = (qs.get('server') || '').replace(/\/$/, '');
+const who = qs.get('n') || '';
+if (who) document.getElementById('who').textContent = 'Invitado: ' + who;
+const $ = (id) => document.getElementById(id);
+let pc = null, stream = null, muted = false;
+
+function setState(cls, txt){ const s = $('st'); s.className = 'state ' + cls; $('stTxt').textContent = txt; }
+function stopAll(){
+  if (pc) { pc.close(); pc = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  $('v').srcObject = null;
+  $('bStop').style.display = 'none'; $('bMute').style.display = 'none';
+  $('bCam').classList.remove('on'); $('bScreen').classList.remove('on');
+  setState('', 'Listo');
+}
+
+async function publish(kind){
+  if (!room) { setState('err', 'Link inválido'); return; }
+  stopAll();
+  try {
+    if (kind === 'cam') {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+    } else if (kind === 'screen') {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: true });
+      // pantalla normalmente no trae mic — añadirlo para que se le escuche
+      try {
+        const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } });
+        mic.getAudioTracks().forEach(t => stream.addTrack(t));
+      } catch (e) { /* sin mic, solo audio del sistema si lo hay */ }
+    } else { // test: tarjeta sintética para probar sin permisos (¿funciona el server?)
+      const c = document.createElement('canvas'); c.width = 1280; c.height = 720;
+      const ctx = c.getContext('2d'); let t0 = performance.now();
+      // setInterval (no rAF): sigue dibujando aunque la pestaña/iframe esté oculta
+      const iv = setInterval(() => { const t = (performance.now() - t0) / 1000;
+        if (!stream) { clearInterval(iv); return; }
+        ctx.fillStyle = '#0b1224'; ctx.fillRect(0, 0, 1280, 720);
+        ctx.fillStyle = '#f4c542';
+        ctx.beginPath(); ctx.arc(640 + Math.cos(t * 2) * 380, 360 + Math.sin(t * 2.7) * 220, 60, 0, 7); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = '700 64px Barlow, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('SEÑAL DE PRUEBA', 640, 100);
+        ctx.font = '600 48px Barlow'; ctx.fillText(t.toFixed(1) + 's', 640, 650);
+      }, 50);
+      stream = c.captureStream(20);
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ac.createOscillator(), dst = ac.createMediaStreamDestination();
+      const gain = ac.createGain(); gain.gain.value = 0.05;
+      osc.frequency.value = 440; osc.connect(gain); gain.connect(dst); osc.start();
+      dst.stream.getAudioTracks().forEach(tr => stream.addTrack(tr));
+    }
+  } catch (e) { setState('err', 'Permiso denegado'); return; }
+
+  $('v').srcObject = stream;
+  ($('b' + (kind === 'cam' ? 'Cam' : 'Screen')).classList).add('on');
+  $('bStop').style.display = '';
+  if (stream.getAudioTracks().length) $('bMute').style.display = '';
+  // si el invitado corta la pantalla desde la barra del navegador
+  stream.getVideoTracks()[0].addEventListener('ended', stopAll);
+
+  setState('', 'Conectando…');
+  pc = new RTCPeerConnection();
+  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'connected') setState('live', 'En el aire');
+    else if (pc.connectionState === 'failed') setState('err', 'Sin conexión — reintenta');
+  };
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  await new Promise((res) => { // esperar ICE (sin trickle, WHIP simple)
+    if (pc.iceGatheringState === 'complete') return res();
+    const chk = () => { if (pc.iceGatheringState === 'complete') { pc.removeEventListener('icegatheringstatechange', chk); res(); } };
+    pc.addEventListener('icegatheringstatechange', chk);
+    setTimeout(res, 1500);
+  });
+  try {
+    const r = await fetch(`${SRV}/${room}/whip`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/sdp' },
+      body: pc.localDescription.sdp,
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await pc.setRemoteDescription({ type: 'answer', sdp: await r.text() });
+  } catch (e) { setState('err', 'Servidor no disponible'); stopAll(); }
+}
+
+$('bCam').onclick = () => publish('cam');
+$('bScreen').onclick = () => publish('screen');
+$('bStop').onclick = stopAll;
+$('bMute').onclick = () => {
+  muted = !muted;
+  stream && stream.getAudioTracks().forEach(t => { t.enabled = !muted; });
+  $('bMute').textContent = muted ? '🎙️ Activar mic' : '🔇 Silenciar mic';
+  $('bMute').classList.toggle('on', muted);
+};
+if (qs.get('test') === '1') publish('test');
+</script></body></html>
