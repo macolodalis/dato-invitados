@@ -39,6 +39,10 @@ services:
     restart: unless-stopped
     depends_on: [mediamtx]
     networks: [default, coolify]
+    environment:
+      # variable mágica de Coolify: al declararla, Coolify habilita el dominio
+      # de este servicio (pestaña Domains) y rellena SERVICE_FQDN_WEB solo.
+      - SERVICE_FQDN_WEB
     expose:
       - "80"
     labels:
