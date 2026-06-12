@@ -87,14 +87,17 @@
 </div>
 <div class="cols">
   <div class="stagecol">
-    <video id="v" autoplay muted playsinline></video>
+    <div class="stage" style="position:relative; min-height:0;">
+      <video id="v" autoplay muted playsinline></video>
+      <video id="vCam" autoplay muted playsinline style="display:none; position:absolute; right:10px; bottom:10px; width:22%; aspect-ratio:16/9; border-radius:10px; border:1.5px solid var(--gold); background:#000; object-fit:cover; box-shadow:0 8px 24px rgba(0,0,0,.5);"></video>
+    </div>
     <div class="controls">
       <button id="bCam">🎥 Cámara + mic</button>
       <button id="bScreen">🖥️ Compartir pantalla</button>
       <button id="bMute" style="display:none">🔇 Silenciar</button>
       <button id="bStop" class="stop" style="display:none">Detener</button>
     </div>
-    <p class="hintbox" id="hint">Elige qué compartir. Cuando el estado diga <b>EN EL AIRE</b>, el estudio ya te ve y te escucha — deja esta pestaña abierta.</p>
+    <p class="hintbox" id="hint">Puedes activar <b>cámara y pantalla a la vez</b> (cada botón enciende/apaga la suya). Tu voz viaja con la cámara; el audio del sistema, con la pantalla. Cuando diga <b>EN EL AIRE</b>, el estudio ya te recibe.</p>
   </div>
   <div class="chat">
     <div class="chat-head">
@@ -117,44 +120,74 @@ const SRV = (qs.get('server') || '').replace(/\/$/, '');
 const who = qs.get('n') || '';
 if (who) document.getElementById('who').textContent = 'Invitado: ' + who;
 const $ = (id) => document.getElementById(id);
-let pc = null, stream = null, muted = false;
-let mixCtx = null, rawTracks = []; // fuentes mezcladas (mic/sistema) a liberar en stop
+// Dos sesiones independientes: la cámara publica en inv-<token> y la
+// pantalla en inv-<token>s — en el estudio son dos elementos separados.
+let sessions = { cam: null, screen: null }; // {pc, stream, raws, mix}
+let muted = false;
 
 function setState(cls, txt){ const s = $('st'); s.className = 'state ' + cls; $('stTxt').textContent = txt; }
-function stopAll(){
-  if (pc) { pc.close(); pc = null; }
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-  rawTracks.forEach(t => { try { t.stop(); } catch (e) {} }); rawTracks = [];
-  if (mixCtx) { try { mixCtx.close(); } catch (e) {} mixCtx = null; }
-  $('v').srcObject = null;
-  $('bStop').style.display = 'none'; $('bMute').style.display = 'none';
-  $('bCam').classList.remove('on'); $('bScreen').classList.remove('on');
-  setState('', 'Listo');
+function roomFor(kind){ return kind === 'screen' ? room + 's' : room; }
+function anyConnected(){ return ['cam','screen'].some(k => sessions[k] && sessions[k].pc && sessions[k].pc.connectionState === 'connected'); }
+function refreshUI(){
+  if (anyConnected()) setState('live', 'En el aire');
+  else if (sessions.cam || sessions.screen) setState('', 'Conectando…');
+  else setState('', 'Listo');
+  $('bCam').classList.toggle('on', !!sessions.cam);
+  $('bScreen').classList.toggle('on', !!sessions.screen);
+  $('bStop').style.display = (sessions.cam || sessions.screen) ? '' : 'none';
+  const hasAudio = ['cam','screen'].some(k => sessions[k] && sessions[k].stream.getAudioTracks().length);
+  $('bMute').style.display = hasAudio ? '' : 'none';
+  // pantalla grande + cámara en PiP cuando hay ambas
+  const main = $('v'), pip = $('vCam');
+  if (sessions.screen) {
+    if (main.srcObject !== sessions.screen.stream) main.srcObject = sessions.screen.stream;
+    if (sessions.cam) { pip.style.display = ''; if (pip.srcObject !== sessions.cam.stream) pip.srcObject = sessions.cam.stream; }
+    else { pip.style.display = 'none'; pip.srcObject = null; }
+  } else if (sessions.cam) {
+    if (main.srcObject !== sessions.cam.stream) main.srcObject = sessions.cam.stream;
+    pip.style.display = 'none'; pip.srcObject = null;
+  } else { main.srcObject = null; pip.style.display = 'none'; pip.srcObject = null; }
 }
+function stopKind(kind){
+  const sess = sessions[kind];
+  if (!sess) return;
+  sessions[kind] = null;
+  try { sess.pc && sess.pc.close(); } catch (e) {}
+  if (sess.stream) sess.stream.getTracks().forEach(t => t.stop());
+  (sess.raws || []).forEach(t => { try { t.stop(); } catch (e) {} });
+  if (sess.mix) { try { sess.mix.close(); } catch (e) {} }
+  refreshUI();
+}
+function stopAll(){ stopKind('cam'); stopKind('screen'); }
 
-// El servidor (MediaMTX) solo acepta UNA pista de audio: si hay audio del
-// sistema (pestaña/pantalla) Y micrófono, los mezclamos en una con WebAudio.
-function mergeAudio(stream, micTracks){
+// El servidor (MediaMTX) solo acepta UNA pista de audio por stream: si llegan
+// varias fuentes, se mezclan en una con WebAudio. Devuelve {raws, mix} para
+// que la sesión las libere al parar.
+function mergeAudio(stream, extraTracks){
   const sys = stream.getAudioTracks();
-  const all = sys.concat(micTracks || []);
-  if (all.length === 0) return;
+  const all = sys.concat(extraTracks || []);
+  if (all.length === 0) return { raws: [], mix: null };
   if (all.length === 1) {
     if (sys.length === 0) stream.addTrack(all[0]);
-    return;
+    return { raws: [], mix: null };
   }
-  mixCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const dst = mixCtx.createMediaStreamDestination();
+  const mix = new (window.AudioContext || window.webkitAudioContext)();
+  const dst = mix.createMediaStreamDestination();
+  const raws = [];
   for (const t of all) {
-    rawTracks.push(t);
-    mixCtx.createMediaStreamSource(new MediaStream([t])).connect(dst);
+    raws.push(t);
+    mix.createMediaStreamSource(new MediaStream([t])).connect(dst);
   }
   sys.forEach(t => stream.removeTrack(t));
   stream.addTrack(dst.stream.getAudioTracks()[0]);
+  return { raws, mix };
 }
 
-async function publish(kind){
+async function start(kind){
   if (!room) { setState('err', 'Link inválido'); return; }
-  stopAll();
+  const slot = (kind === 'screen' || kind === 'testscreen') ? 'screen' : 'cam';
+  if (sessions[slot]) { stopKind(slot); return; } // toggle: apagar
+  let stream, raws = [], mix = null;
   try {
     if (kind === 'cam') {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -162,13 +195,8 @@ async function publish(kind){
         audio: { echoCancellation: true, noiseSuppression: true },
       });
     } else if (kind === 'screen') {
+      // SOLO audio del sistema: la voz viaja con la cámara (evita doble mic)
       stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: true });
-      let micTracks = [];
-      try {
-        const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } });
-        micTracks = mic.getAudioTracks();
-      } catch (e) { /* sin mic: queda el audio del sistema si lo hay */ }
-      mergeAudio(stream, micTracks);
     } else { // test: tarjeta sintética para probar sin permisos (¿funciona el server?)
       const c = document.createElement('canvas'); c.width = 1280; c.height = 720;
       const ctx = c.getContext('2d'); let t0 = performance.now();
@@ -176,10 +204,10 @@ async function publish(kind){
       const iv = setInterval(() => { const t = (performance.now() - t0) / 1000;
         if (!stream) { clearInterval(iv); return; }
         ctx.fillStyle = '#0b1224'; ctx.fillRect(0, 0, 1280, 720);
-        ctx.fillStyle = '#f4c542';
+        ctx.fillStyle = kind === 'testscreen' ? '#19c37d' : '#f4c542';
         ctx.beginPath(); ctx.arc(640 + Math.cos(t * 2) * 380, 360 + Math.sin(t * 2.7) * 220, 60, 0, 7); ctx.fill();
         ctx.fillStyle = '#fff'; ctx.font = '700 64px Barlow, sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText('SEÑAL DE PRUEBA', 640, 100);
+        ctx.fillText(kind === 'testscreen' ? 'PANTALLA DE PRUEBA' : 'SEÑAL DE PRUEBA', 640, 100);
         ctx.font = '600 48px Barlow'; ctx.fillText(t.toFixed(1) + 's', 640, 650);
       }, 50);
       stream = c.captureStream(20);
@@ -191,7 +219,8 @@ async function publish(kind){
         // simular pantalla+mic: dos fuentes de audio pasando por la mezcla
         const osc2 = ac.createOscillator(), dst2 = ac.createMediaStreamDestination();
         osc2.frequency.value = 660; osc2.connect(dst2); osc2.start();
-        mergeAudio(stream, dst.stream.getAudioTracks().concat(dst2.stream.getAudioTracks()));
+        const m = mergeAudio(stream, dst.stream.getAudioTracks().concat(dst2.stream.getAudioTracks()));
+        raws = m.raws; mix = m.mix;
       } else {
         dst.stream.getAudioTracks().forEach(tr => stream.addTrack(tr));
       }
@@ -204,20 +233,18 @@ async function publish(kind){
     return;
   }
 
-  $('v').srcObject = stream;
-  ($('b' + (kind === 'cam' ? 'Cam' : 'Screen')).classList).add('on');
-  $('bStop').style.display = '';
-  if (stream.getAudioTracks().length) $('bMute').style.display = '';
+  const pc = new RTCPeerConnection();
+  const sess = { pc, stream, raws, mix };
+  sessions[slot] = sess;
   // si el invitado corta la pantalla desde la barra del navegador
-  stream.getVideoTracks()[0].addEventListener('ended', stopAll);
-
-  setState('', 'Conectando…');
-  pc = new RTCPeerConnection();
+  stream.getVideoTracks()[0].addEventListener('ended', () => { if (sessions[slot] === sess) stopKind(slot); });
   stream.getTracks().forEach(t => pc.addTrack(t, stream));
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'connected') setState('live', 'En el aire');
-    else if (pc.connectionState === 'failed') setState('err', 'Sin conexión — reintenta');
+    if (sessions[slot] !== sess) return;
+    if (pc.connectionState === 'failed') { setState('err', 'Sin conexión — reintenta'); stopKind(slot); return; }
+    refreshUI();
   };
+  refreshUI();
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   await new Promise((res) => { // esperar ICE (sin trickle, WHIP simple)
@@ -227,26 +254,29 @@ async function publish(kind){
     setTimeout(res, 1500);
   });
   try {
-    const r = await fetch(`${SRV}/${room}/whip`, {
+    const r = await fetch(`${SRV}/${roomFor(slot)}/whip`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/sdp' },
       body: pc.localDescription.sdp,
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     await pc.setRemoteDescription({ type: 'answer', sdp: await r.text() });
-  } catch (e) { setState('err', 'Servidor no disponible'); stopAll(); }
+  } catch (e) { if (sessions[slot] === sess) { setState('err', 'Servidor no disponible'); stopKind(slot); } }
 }
 
-$('bCam').onclick = () => publish('cam');
-$('bScreen').onclick = () => publish('screen');
+$('bCam').onclick = () => start('cam');
+$('bScreen').onclick = () => start('screen');
 $('bStop').onclick = stopAll;
 $('bMute').onclick = () => {
   muted = !muted;
-  stream && stream.getAudioTracks().forEach(t => { t.enabled = !muted; });
-  $('bMute').textContent = muted ? '🎙️ Activar mic' : '🔇 Silenciar';
+  ['cam','screen'].forEach(k => { const s2 = sessions[k]; s2 && s2.stream.getAudioTracks().forEach(t => { t.enabled = !muted; }); });
+  $('bMute').textContent = muted ? '🎙️ Activar audio' : '🔇 Silenciar';
   $('bMute').classList.toggle('on', muted);
 };
-if (qs.get('test') === '1' || qs.get('test') === '2') publish('test');
+const TESTMODE = qs.get('test');
+if (TESTMODE === '1' || TESTMODE === '2') start('test');
+// test=3: cámara y pantalla sintéticas a la vez (valida el modo dual completo)
+if (TESTMODE === '3') { start('test'); setTimeout(() => start('testscreen'), 800); }
 
 // ===== chat del stream (vía el relay del servidor) =====
 let ws = null, msgs = [], tab = 'all';
