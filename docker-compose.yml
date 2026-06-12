@@ -35,12 +35,20 @@ services:
     expose:
       - "8889"            # WHIP/WHEP HTTP (solo interno; nginx hace proxy)
 
+  chatrelay:
+    build:
+      context: .
+      dockerfile: Dockerfile.chatrelay
+    restart: unless-stopped
+    expose:
+      - "8085"           # WS del chat de la cabina (nginx hace proxy en /ws/)
+
   web:
     build:
       context: .
       dockerfile: Dockerfile.web
     restart: unless-stopped
-    depends_on: [mediamtx]
+    depends_on: [mediamtx, chatrelay]
     networks: [default, coolify]
     environment:
       # variable mágica de Coolify: al declararla, Coolify habilita el dominio

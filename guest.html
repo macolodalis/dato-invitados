@@ -6,50 +6,109 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@500;600;700;800&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{ --bg:#0b1224; --card:#121d33; --card2:#0d1730; --line:rgba(255,255,255,.1);
-    --txt:#e9eef8; --dim:#a4afc6; --gold:#f4c542; --acc:#4b86f0; --green:#19c37d; --red:#e8453c; }
-  *{ box-sizing:border-box; }
-  body{ margin:0; min-height:100vh; color:var(--txt); font-family:'Barlow',system-ui,sans-serif;
-    background:radial-gradient(1100px 520px at 50% -180px, #17244b 0%, var(--bg) 60%);
-    display:flex; flex-direction:column; align-items:center; padding:18px 16px calc(30px + env(safe-area-inset-bottom)); gap:14px; }
-  .top{ display:flex; align-items:center; gap:12px; width:100%; max-width:760px; }
-  .dm{ width:38px; height:38px; border-radius:10px; background:linear-gradient(135deg,#e8453c,#b3322c);
-    display:grid; place-items:center; font-family:'Oswald'; font-weight:700; font-size:15px; color:#fff; }
-  .brand b{ font-family:'Oswald'; font-weight:700; font-size:17px; display:block; line-height:1.1; }
+  :root{ --bg:#0b1224; --card:#121d33; --card2:#0d1730; --line:rgba(255,255,255,.1); --line2:rgba(255,255,255,.16);
+    --txt:#e9eef8; --dim:#a4afc6; --mute:#67718d; --gold:#f4c542; --acc:#4b86f0; --green:#19c37d; --red:#e8453c; }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; }
+  body{ color:var(--txt); font-family:'Barlow',system-ui,sans-serif;
+    background:radial-gradient(1100px 520px at 50% -180px, #17244b 0%, var(--bg) 60%) fixed;
+    display:flex; flex-direction:column; padding:14px 14px calc(16px + env(safe-area-inset-bottom)); gap:12px; }
+  /* ---- header ---- */
+  .top{ display:flex; align-items:center; gap:12px; flex:0 0 auto; }
+  .dm{ width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#e8453c,#b3322c);
+    display:grid; place-items:center; font-family:'Oswald'; font-weight:700; font-size:14px; color:#fff; flex:0 0 auto; }
+  .brand b{ font-family:'Oswald'; font-weight:700; font-size:16px; display:block; line-height:1.1; white-space:nowrap; }
   .brand b i{ color:var(--gold); font-style:normal; }
-  .brand span{ font-family:'Oswald'; font-size:10.5px; letter-spacing:.3em; color:var(--dim); text-transform:uppercase; }
-  .state{ margin-left:auto; display:flex; align-items:center; gap:8px; padding:7px 14px; border-radius:999px;
+  .brand span{ font-family:'Oswald'; font-size:9.5px; letter-spacing:.28em; color:var(--dim); text-transform:uppercase; }
+  .who{ font-family:'Oswald'; font-weight:600; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--gold);
+    margin-left:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .state{ margin-left:auto; display:flex; align-items:center; gap:7px; padding:6px 13px; border-radius:999px; flex:0 0 auto;
     background:var(--card2); border:1px solid var(--line); font-family:'Oswald'; font-weight:600;
-    font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); }
-  .state .dot{ width:8px; height:8px; border-radius:50%; background:#5a647c; }
+    font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); }
+  .state .dot{ width:7px; height:7px; border-radius:50%; background:#5a647c; }
   .state.live{ color:#bdf3da; border-color:rgba(25,195,125,.4); } .state.live .dot{ background:var(--green); box-shadow:0 0 8px var(--green); }
   .state.err{ color:#ffb3ad; border-color:rgba(232,69,60,.45); } .state.err .dot{ background:var(--red); }
-  video{ width:100%; max-width:760px; aspect-ratio:16/9; background:#000; border-radius:14px;
-    border:1px solid var(--line); object-fit:contain; }
-  .controls{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; width:100%; max-width:760px; }
-  button{ font:700 14px 'Barlow'; color:var(--txt); cursor:pointer; padding:13px 20px; border-radius:12px;
-    background:linear-gradient(180deg,var(--card),var(--card2)); border:1px solid var(--line); flex:1 1 160px;
-    display:flex; align-items:center; justify-content:center; gap:9px; transition:border-color .12s, transform .08s; }
-  button:active{ transform:translateY(1px); }
-  button.on{ border-color:var(--gold); box-shadow:0 0 0 1.5px var(--gold); }
-  button.stop{ border-color:rgba(232,69,60,.5); color:#ffb3ad; }
-  .hintbox{ font-size:13px; color:var(--dim); text-align:center; max-width:560px; line-height:1.5; }
-  .name{ font-family:'Oswald'; font-weight:600; font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--gold); }
+  /* ---- layout: video | chat ---- */
+  .cols{ flex:1; min-height:0; display:grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap:12px; }
+  @media (max-width: 920px){
+    body{ overflow:auto; }
+    .cols{ display:flex; flex-direction:column; }
+    .chat{ height:44vh; min-height:280px; }
+  }
+  .stagecol{ display:flex; flex-direction:column; gap:10px; min-width:0; min-height:0; }
+  video{ width:100%; flex:0 1 auto; aspect-ratio:16/9; background:#000; border-radius:14px;
+    border:1px solid var(--line); object-fit:contain; max-height:62vh; }
+  .controls{ display:flex; gap:8px; flex-wrap:wrap; }
+  .controls button{ font:700 13px 'Barlow'; color:var(--txt); cursor:pointer; padding:11px 16px; border-radius:11px;
+    background:linear-gradient(180deg,var(--card),var(--card2)); border:1px solid var(--line); flex:1 1 140px;
+    display:flex; align-items:center; justify-content:center; gap:8px; transition:border-color .12s, transform .08s; }
+  .controls button:active{ transform:translateY(1px); }
+  .controls button.on{ border-color:var(--gold); box-shadow:0 0 0 1.5px var(--gold); }
+  .controls button.stop{ border-color:rgba(232,69,60,.5); color:#ffb3ad; flex:0 1 110px; }
+  .hintbox{ font-size:12px; color:var(--mute); line-height:1.45; margin:0; }
+  /* ---- chat panel ---- */
+  .chat{ display:flex; flex-direction:column; min-height:0; background:linear-gradient(180deg,var(--card),#101a2e);
+    border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+  .chat-head{ display:flex; align-items:center; gap:9px; padding:10px 12px 8px;
+    border-bottom:1px solid transparent;
+    border-image:linear-gradient(90deg, rgba(244,197,66,.35), transparent 70%) 1; }
+  .chat-head h2{ margin:0; font-family:'Oswald'; font-weight:600; font-size:11px; letter-spacing:.2em;
+    text-transform:uppercase; color:var(--gold); }
+  .chat-head .cdot{ width:7px; height:7px; border-radius:50%; background:#5a647c; flex:0 0 auto; }
+  .chat-head .cdot.on{ background:var(--green); box-shadow:0 0 6px var(--green); }
+  .tabs{ margin-left:auto; display:flex; gap:4px; }
+  .tabs button{ font:600 10.5px 'Oswald'; letter-spacing:.1em; text-transform:uppercase; color:var(--dim);
+    background:transparent; border:1px solid var(--line); border-radius:999px; padding:4px 11px; cursor:pointer; }
+  .tabs button.on{ background:var(--acc); border-color:var(--acc); color:#fff; }
+  .msgs{ flex:1; min-height:0; overflow-y:auto; padding:8px 10px; display:flex; flex-direction:column; gap:5px;
+    overscroll-behavior:contain; }
+  .msgs::-webkit-scrollbar{ width:8px; } .msgs::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.12); border-radius:4px; }
+  .m{ display:flex; gap:8px; align-items:flex-start; padding:7px 9px; border-radius:9px; background:var(--card2);
+    border:1px solid var(--line); }
+  .m.mine{ border-left:2px solid var(--gold); }
+  .m .body{ flex:1; min-width:0; }
+  .m .a{ font-weight:700; font-size:12.5px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .m .a .plat{ font-family:'Oswald'; font-weight:500; font-size:9px; letter-spacing:.08em; text-transform:uppercase; }
+  .plat.tiktok{ color:#5bd6e8; } .plat.youtube{ color:#ff6a5e; } .plat.facebook{ color:#5b9bff; }
+  .m .a .via{ font-size:9px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#8fb3f7; }
+  .m .t{ font-size:13px; color:var(--dim); word-break:break-word; line-height:1.35; }
+  .m .pin{ flex:0 0 auto; font-size:14px; line-height:1; background:transparent; border:1px solid var(--line);
+    color:var(--dim); border-radius:8px; padding:6px 8px; cursor:pointer; transition:border-color .12s; }
+  .m .pin:hover{ border-color:var(--gold); color:var(--gold); }
+  .m .pin.sent{ border-color:var(--green); color:var(--green); cursor:default; }
+  .chat-empty{ margin:auto; text-align:center; color:var(--mute); font-size:12px; padding:0 18px; line-height:1.5; }
+  .chat-foot{ padding:7px 12px; border-top:1px solid var(--line); font-size:10.5px; color:var(--mute); }
 </style></head><body>
 <div class="top">
   <div class="dm">DM</div>
   <div class="brand"><b>DATO <i>MIGRATORIO</i></b><span>Cabina del invitado</span></div>
+  <div class="who" id="who"></div>
   <div class="state" id="st"><span class="dot"></span><span id="stTxt">Listo</span></div>
 </div>
-<div class="name" id="who"></div>
-<video id="v" autoplay muted playsinline></video>
-<div class="controls">
-  <button id="bCam">🎥 Cámara + mic</button>
-  <button id="bScreen">🖥️ Compartir pantalla</button>
-  <button id="bMute" style="display:none">🔇 Silenciar mic</button>
-  <button id="bStop" class="stop" style="display:none">Detener</button>
+<div class="cols">
+  <div class="stagecol">
+    <video id="v" autoplay muted playsinline></video>
+    <div class="controls">
+      <button id="bCam">🎥 Cámara + mic</button>
+      <button id="bScreen">🖥️ Compartir pantalla</button>
+      <button id="bMute" style="display:none">🔇 Silenciar</button>
+      <button id="bStop" class="stop" style="display:none">Detener</button>
+    </div>
+    <p class="hintbox" id="hint">Elige qué compartir. Cuando el estado diga <b>EN EL AIRE</b>, el estudio ya te ve y te escucha — deja esta pestaña abierta.</p>
+  </div>
+  <div class="chat">
+    <div class="chat-head">
+      <span class="cdot" id="cdot"></span>
+      <h2>Chat del stream</h2>
+      <div class="tabs" id="tabs" style="display:none">
+        <button id="tabAll" class="on">Todos</button>
+        <button id="tabMine">Mi canal</button>
+      </div>
+    </div>
+    <div class="msgs" id="msgs"><div class="chat-empty" id="chatEmpty">Conectando con el estudio…<br>Aquí verás el chat del directo en vivo.</div></div>
+    <div class="chat-foot">📌 = sugerir al estudio que muestre ese mensaje en pantalla</div>
+  </div>
 </div>
-<p class="hintbox" id="hint">Elige qué compartir. Cuando el estado diga <b>EN EL AIRE</b>, el estudio ya te ve y te escucha — deja esta pestaña abierta.</p>
 <script>
 const qs = new URLSearchParams(location.search);
 const room = (qs.get('room') || '').replace(/[^a-z0-9-]/g, '');
@@ -184,8 +243,80 @@ $('bStop').onclick = stopAll;
 $('bMute').onclick = () => {
   muted = !muted;
   stream && stream.getAudioTracks().forEach(t => { t.enabled = !muted; });
-  $('bMute').textContent = muted ? '🎙️ Activar mic' : '🔇 Silenciar mic';
+  $('bMute').textContent = muted ? '🎙️ Activar mic' : '🔇 Silenciar';
   $('bMute').classList.toggle('on', muted);
 };
 if (qs.get('test') === '1' || qs.get('test') === '2') publish('test');
+
+// ===== chat del stream (vía el relay del servidor) =====
+let ws = null, msgs = [], tab = 'all';
+const MAXM = 120;
+
+function wsURL(){
+  const base = SRV || (location.protocol + '//' + location.host);
+  return base.replace(/^http/, 'ws') + '/ws/' + room + '?role=sub';
+}
+function connectChat(){
+  if (!room) return;
+  try { ws = new WebSocket(wsURL()); } catch (e) { return setTimeout(connectChat, 5000); }
+  ws.onopen = () => { $('cdot').classList.add('on'); };
+  ws.onclose = () => { $('cdot').classList.remove('on'); setTimeout(connectChat, 4000); };
+  ws.onerror = () => { try { ws.close(); } catch (e) {} };
+  ws.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch (err) { return; }
+    if (m.type === 'feed' && Array.isArray(m.items)) { msgs = m.items.slice(-MAXM); renderChat(); }
+    else if (m.type === 'chat' && m.ev) {
+      msgs.push(m.ev);
+      if (msgs.length > MAXM) msgs = msgs.slice(-MAXM);
+      renderChat(true);
+    }
+  };
+}
+function suggest(ev, btn){
+  if (!ws || ws.readyState !== 1) return;
+  ws.send(JSON.stringify({ type: 'suggest', from: who || 'Invitado', ev: {
+    id: ev.id, platform: ev.platform, author: ev.author, text: ev.text, via: ev.via || '',
+  }}));
+  btn.textContent = '✓'; btn.classList.add('sent');
+  setTimeout(() => { btn.textContent = '📌'; btn.classList.remove('sent'); }, 2500);
+}
+function renderChat(append){
+  const box = $('msgs');
+  const stick = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  const list = tab === 'mine' ? msgs.filter(m => (m.via || '') === who) : msgs;
+  box.innerHTML = '';
+  if (!list.length) {
+    const d = document.createElement('div'); d.className = 'chat-empty';
+    d.textContent = tab === 'mine'
+      ? 'Aún no llegan mensajes de tu canal. Pídele al estudio activar "Sus chats al stream".'
+      : 'Sin mensajes todavía — en cuanto el chat del directo se mueva, aparece aquí.';
+    box.appendChild(d);
+    return;
+  }
+  for (const ev of list) {
+    const row = document.createElement('div');
+    row.className = 'm' + ((ev.via || '') === who && who ? ' mine' : '');
+    const body = document.createElement('div'); body.className = 'body';
+    const a = document.createElement('div'); a.className = 'a';
+    const plat = document.createElement('span'); plat.className = 'plat ' + (ev.platform || '');
+    plat.textContent = ev.platform || '';
+    const name = document.createElement('span'); name.textContent = ev.author || 'anon';
+    a.appendChild(plat); a.appendChild(name);
+    if (ev.via) { const via = document.createElement('span'); via.className = 'via'; via.textContent = 'vía ' + ev.via; a.appendChild(via); }
+    const t = document.createElement('div'); t.className = 't'; t.textContent = ev.text || '';
+    body.appendChild(a); body.appendChild(t);
+    const pin = document.createElement('button'); pin.className = 'pin'; pin.textContent = '📌';
+    pin.title = 'Sugerir mostrar este mensaje en pantalla';
+    pin.onclick = () => suggest(ev, pin);
+    row.appendChild(body); row.appendChild(pin);
+    box.appendChild(row);
+  }
+  if (stick || append !== true) box.scrollTop = box.scrollHeight;
+}
+if (who) {
+  $('tabs').style.display = '';
+  $('tabAll').onclick = () => { tab = 'all'; $('tabAll').classList.add('on'); $('tabMine').classList.remove('on'); renderChat(); };
+  $('tabMine').onclick = () => { tab = 'mine'; $('tabMine').classList.add('on'); $('tabAll').classList.remove('on'); renderChat(); };
+}
+connectChat();
 </script></body></html>

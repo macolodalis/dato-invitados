@@ -1,0 +1,10 @@
+# Relay de chat de la cabina — binario Go estático, imagen mínima.
+FROM golang:1.23-alpine AS build
+WORKDIR /src
+COPY chatrelay/ .
+RUN go mod download && CGO_ENABLED=0 go build -ldflags="-s -w" -o /chatrelay .
+
+FROM scratch
+COPY --from=build /chatrelay /chatrelay
+EXPOSE 8085
+ENTRYPOINT ["/chatrelay"]
