@@ -59,15 +59,38 @@ const who = qs.get('n') || '';
 if (who) document.getElementById('who').textContent = 'Invitado: ' + who;
 const $ = (id) => document.getElementById(id);
 let pc = null, stream = null, muted = false;
+let mixCtx = null, rawTracks = []; // fuentes mezcladas (mic/sistema) a liberar en stop
 
 function setState(cls, txt){ const s = $('st'); s.className = 'state ' + cls; $('stTxt').textContent = txt; }
 function stopAll(){
   if (pc) { pc.close(); pc = null; }
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  rawTracks.forEach(t => { try { t.stop(); } catch (e) {} }); rawTracks = [];
+  if (mixCtx) { try { mixCtx.close(); } catch (e) {} mixCtx = null; }
   $('v').srcObject = null;
   $('bStop').style.display = 'none'; $('bMute').style.display = 'none';
   $('bCam').classList.remove('on'); $('bScreen').classList.remove('on');
   setState('', 'Listo');
+}
+
+// El servidor (MediaMTX) solo acepta UNA pista de audio: si hay audio del
+// sistema (pestaña/pantalla) Y micrófono, los mezclamos en una con WebAudio.
+function mergeAudio(stream, micTracks){
+  const sys = stream.getAudioTracks();
+  const all = sys.concat(micTracks || []);
+  if (all.length === 0) return;
+  if (all.length === 1) {
+    if (sys.length === 0) stream.addTrack(all[0]);
+    return;
+  }
+  mixCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const dst = mixCtx.createMediaStreamDestination();
+  for (const t of all) {
+    rawTracks.push(t);
+    mixCtx.createMediaStreamSource(new MediaStream([t])).connect(dst);
+  }
+  sys.forEach(t => stream.removeTrack(t));
+  stream.addTrack(dst.stream.getAudioTracks()[0]);
 }
 
 async function publish(kind){
@@ -81,11 +104,12 @@ async function publish(kind){
       });
     } else if (kind === 'screen') {
       stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: true });
-      // pantalla normalmente no trae mic — añadirlo para que se le escuche
+      let micTracks = [];
       try {
         const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } });
-        mic.getAudioTracks().forEach(t => stream.addTrack(t));
-      } catch (e) { /* sin mic, solo audio del sistema si lo hay */ }
+        micTracks = mic.getAudioTracks();
+      } catch (e) { /* sin mic: queda el audio del sistema si lo hay */ }
+      mergeAudio(stream, micTracks);
     } else { // test: tarjeta sintética para probar sin permisos (¿funciona el server?)
       const c = document.createElement('canvas'); c.width = 1280; c.height = 720;
       const ctx = c.getContext('2d'); let t0 = performance.now();
@@ -104,9 +128,22 @@ async function publish(kind){
       const osc = ac.createOscillator(), dst = ac.createMediaStreamDestination();
       const gain = ac.createGain(); gain.gain.value = 0.05;
       osc.frequency.value = 440; osc.connect(gain); gain.connect(dst); osc.start();
-      dst.stream.getAudioTracks().forEach(tr => stream.addTrack(tr));
+      if (qs.get('test') === '2') {
+        // simular pantalla+mic: dos fuentes de audio pasando por la mezcla
+        const osc2 = ac.createOscillator(), dst2 = ac.createMediaStreamDestination();
+        osc2.frequency.value = 660; osc2.connect(dst2); osc2.start();
+        mergeAudio(stream, dst.stream.getAudioTracks().concat(dst2.stream.getAudioTracks()));
+      } else {
+        dst.stream.getAudioTracks().forEach(tr => stream.addTrack(tr));
+      }
     }
-  } catch (e) { setState('err', 'Permiso denegado'); return; }
+  } catch (e) {
+    const mac = navigator.platform && navigator.platform.indexOf('Mac') === 0;
+    setState('err', e && e.name === 'NotAllowedError' && kind === 'screen' && mac
+      ? 'Permiso del sistema: Ajustes → Privacidad → Grabación de pantalla'
+      : 'Permiso denegado');
+    return;
+  }
 
   $('v').srcObject = stream;
   ($('b' + (kind === 'cam' ? 'Cam' : 'Screen')).classList).add('on');
@@ -150,5 +187,5 @@ $('bMute').onclick = () => {
   $('bMute').textContent = muted ? '🎙️ Activar mic' : '🔇 Silenciar mic';
   $('bMute').classList.toggle('on', muted);
 };
-if (qs.get('test') === '1') publish('test');
+if (qs.get('test') === '1' || qs.get('test') === '2') publish('test');
 </script></body></html>
