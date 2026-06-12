@@ -1,15 +1,23 @@
 # Invitados — servidor WebRTC propio (tipo vdo.ninja, pero SFU: menor y más
 # estable latencia, funciona con cualquier red del invitado).
 #
-# Despliegue en Coolify:
+# Despliegue en Coolify (SIN tocar la pantalla de dominios de la UI):
 #   1. + New → Public Repository → URL de este repo → build pack "Docker Compose".
-#   2. Variable de entorno PUBLIC_HOST = invitados.tudominio.com
-#   3. Asigna ese dominio HTTPS al servicio `web` (puerto 80). Sin HTTPS el
-#      navegador del invitado no permite compartir pantalla.
+#   2. Variables de entorno del recurso:
+#        PUBLIC_HOST = invitados.tudominio.com   (solo el host, sin https://)
+#   3. DNS: registro A de ese subdominio → IP del VPS.
 #   4. Abre el puerto UDP 8189 en el firewall del VPS (por ahí fluye el video).
+#   5. Deploy. El enrutamiento HTTPS lo hacen las labels de Traefik de abajo
+#      (Coolify las lee del contenedor; el certificado lo emite solo).
 #
-# Los archivos de configuración van DENTRO de las imágenes (Dockerfiles):
-# Coolify no monta archivos del repo en despliegues compose.
+# La configuración va DENTRO de las imágenes (Dockerfiles): Coolify no monta
+# archivos del repo en despliegues compose.
+networks:
+  # red del proxy de Coolify (existe en todo Coolify v4); para probar este
+  # compose fuera de Coolify: `docker network create coolify`
+  coolify:
+    external: true
+
 services:
   mediamtx:
     build:
@@ -30,5 +38,19 @@ services:
       dockerfile: Dockerfile.web
     restart: unless-stopped
     depends_on: [mediamtx]
+    networks: [default, coolify]
     expose:
-      - "80"              # Coolify/Traefik publica esto con HTTPS
+      - "80"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      # HTTPS con certificado automático
+      - traefik.http.routers.invitados.rule=Host(`${PUBLIC_HOST:-invitados.example.com}`)
+      - traefik.http.routers.invitados.entryPoints=https
+      - traefik.http.routers.invitados.tls=true
+      - traefik.http.routers.invitados.tls.certresolver=letsencrypt
+      - traefik.http.services.invitados.loadbalancer.server.port=80
+      # HTTP → HTTPS
+      - traefik.http.routers.invitados-http.rule=Host(`${PUBLIC_HOST:-invitados.example.com}`)
+      - traefik.http.routers.invitados-http.entryPoints=http
+      - traefik.http.routers.invitados-http.middlewares=redirect-to-https
