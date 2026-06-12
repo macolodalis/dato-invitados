@@ -95,6 +95,7 @@
       <button id="bCam">🎥 Cámara + mic</button>
       <button id="bScreen">🖥️ Compartir pantalla</button>
       <button id="bMute" style="display:none">🔇 Silenciar</button>
+      <button id="bQual">✨ Nitidez: equilibrada</button>
       <button id="bStop" class="stop" style="display:none">Detener</button>
     </div>
     <p class="hintbox" id="hint">Puedes activar <b>cámara y pantalla a la vez</b> (cada botón enciende/apaga la suya). Tu voz viaja con la cámara; el audio del sistema, con la pantalla. Cuando diga <b>EN EL AIRE</b>, el estudio ya te recibe.</p>
@@ -190,13 +191,19 @@ async function start(kind){
   let stream, raws = [], mix = null;
   try {
     if (kind === 'cam') {
+      const hd = QUALITY === 'sharp';
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+        video: { width: { ideal: hd ? 1920 : 1280 }, height: { ideal: hd ? 1080 : 720 }, frameRate: { ideal: 30 } },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
     } else if (kind === 'screen') {
       // SOLO audio del sistema: la voz viaja con la cámara (evita doble mic)
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: true });
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+        audio: true,
+      });
+      // pantalla = texto/detalle: que el codificador priorice la NITIDEZ
+      stream.getVideoTracks().forEach(t => { try { t.contentHint = 'detail'; } catch (err) {} });
     } else { // test: tarjeta sintética para probar sin permisos (¿funciona el server?)
       const c = document.createElement('canvas'); c.width = 1280; c.height = 720;
       const ctx = c.getContext('2d'); let t0 = performance.now();
@@ -236,6 +243,7 @@ async function start(kind){
   const pc = new RTCPeerConnection();
   const sess = { pc, stream, raws, mix };
   sessions[slot] = sess;
+  tuneSenders(pc, slot);
   // si el invitado corta la pantalla desde la barra del navegador
   stream.getVideoTracks()[0].addEventListener('ended', () => { if (sessions[slot] === sess) stopKind(slot); });
   stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -263,6 +271,40 @@ async function start(kind){
     await pc.setRemoteDescription({ type: 'answer', sdp: await r.text() });
   } catch (e) { if (sessions[slot] === sess) { setState('err', 'Servidor no disponible'); stopKind(slot); } }
 }
+
+// ---- calidad: que el video NO pierda resolución cuando la red aprieta ----
+// 'balanced' (defecto WebRTC) baja resolución para sostener fps; 'sharp'
+// mantiene la resolución (baja fps si hace falta) y sube el tope de bitrate.
+let QUALITY = localStorage.getItem('dm-quality') || 'balanced';
+function tuneSenders(pc, slot){
+  setTimeout(async () => {
+    for (const sender of pc.getSenders()) {
+      if (!sender.track || sender.track.kind !== 'video') continue;
+      try {
+        const p = sender.getParameters();
+        if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+        // pantalla SIEMPRE prioriza resolución (texto nítido); cámara según ajuste
+        if (slot === 'screen' || QUALITY === 'sharp') p.degradationPreference = 'maintain-resolution';
+        p.encodings[0].maxBitrate = slot === 'screen'
+          ? (QUALITY === 'sharp' ? 6_000_000 : 4_000_000)
+          : (QUALITY === 'sharp' ? 3_500_000 : 2_000_000);
+        await sender.setParameters(p);
+      } catch (err) { /* navegadores viejos: se queda en lo suyo */ }
+    }
+  }, 50);
+}
+function paintQual(){
+  $('bQual').textContent = QUALITY === 'sharp' ? '✨ Nitidez: máxima' : '✨ Nitidez: equilibrada';
+  $('bQual').classList.toggle('on', QUALITY === 'sharp');
+}
+$('bQual').onclick = () => {
+  QUALITY = QUALITY === 'sharp' ? 'balanced' : 'sharp';
+  localStorage.setItem('dm-quality', QUALITY);
+  paintQual();
+  // re-aplicar en vivo a las sesiones activas, sin re-publicar
+  ['cam','screen'].forEach(k => { if (sessions[k]) tuneSenders(sessions[k].pc, k); });
+};
+paintQual();
 
 $('bCam').onclick = () => start('cam');
 $('bScreen').onclick = () => start('screen');
